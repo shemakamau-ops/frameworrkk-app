@@ -1,11 +1,163 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const BORDER = "1px solid rgba(242,242,242,.12)";
 const BORDER_STRONG = "1px solid rgba(242,242,242,.22)";
 
+type BadgeTone = "good" | "warn" | "neutral";
+type DashboardSection = "tasks" | "content" | "projects" | "intel";
+type ContentPlatform = "YouTube" | "Instagram";
+
+type ContentPost = {
+  title: string;
+  platform: ContentPlatform;
+  topic: string;
+  format: string;
+  publishedAt: string;
+  performance: number;
+};
+
+type ContentSuggestion = {
+  type: string;
+  title: string;
+  reason: string;
+  score: number;
+};
+
+type ContentIntel = {
+  monthLabel: string;
+  monthPosts: ContentPost[];
+  totalPercent: number;
+  primarySuggestion: ContentSuggestion;
+  suggestions: ContentSuggestion[];
+  topTopic: string;
+  topFormat: string;
+  repurposeCount: number;
+  channelCounts: Record<ContentPlatform, number>;
+};
+
+const CONTENT_GOALS: Record<ContentPlatform | "total", number> = {
+  total: 40,
+  YouTube: 8,
+  Instagram: 32,
+};
+
+const FALLBACK_CONTENT_FEED: ContentPost[] = [
+  { title: "Positioning video", platform: "YouTube", topic: "positioning", format: "education", publishedAt: "2026-06-02", performance: 88 },
+  { title: "One shoot / week of content", platform: "YouTube", topic: "content systems", format: "tutorial", publishedAt: "2026-06-05", performance: 84 },
+  { title: "Georgia travel setup", platform: "YouTube", topic: "travel workflow", format: "behind the scenes", publishedAt: "2026-06-09", performance: 77 },
+  { title: "Client reel breakdown", platform: "YouTube", topic: "client work", format: "case study", publishedAt: "2026-06-12", performance: 81 },
+  { title: "Shoot day checklist", platform: "Instagram", topic: "content systems", format: "carousel", publishedAt: "2026-06-01", performance: 73 },
+  { title: "Georgia b-roll pocket cam", platform: "Instagram", topic: "travel workflow", format: "reel", publishedAt: "2026-06-03", performance: 86 },
+  { title: "Before editing, organize", platform: "Instagram", topic: "editing workflow", format: "reel", publishedAt: "2026-06-04", performance: 78 },
+  { title: "Thumbnail direction notes", platform: "Instagram", topic: "positioning", format: "story", publishedAt: "2026-06-06", performance: 64 },
+  { title: "How I batch scripts", platform: "Instagram", topic: "content systems", format: "reel", publishedAt: "2026-06-07", performance: 82 },
+  { title: "Travel voiceover pass", platform: "Instagram", topic: "travel workflow", format: "reel", publishedAt: "2026-06-08", performance: 79 },
+  { title: "Client recap teaser", platform: "Instagram", topic: "client work", format: "reel", publishedAt: "2026-06-10", performance: 83 },
+  { title: "Desk reset for planning", platform: "Instagram", topic: "operations", format: "story", publishedAt: "2026-06-11", performance: 59 },
+  { title: "Manager handoff rules", platform: "Instagram", topic: "operations", format: "carousel", publishedAt: "2026-06-13", performance: 68 },
+  { title: "Script hook examples", platform: "Instagram", topic: "positioning", format: "carousel", publishedAt: "2026-06-14", performance: 80 },
+  { title: "Editing queue mini update", platform: "Instagram", topic: "editing workflow", format: "story", publishedAt: "2026-06-15", performance: 66 },
+];
+
+function monthKey(dateValue: string | Date) {
+  const date = new Date(dateValue);
+  return `${date.getFullYear()}-${date.getMonth()}`;
+}
+
+function getMonthLabel(month: string) {
+  const [year, monthIndex] = month.split("-").map(Number);
+  return new Date(year, monthIndex, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function countBy<T extends Record<string, unknown>>(items: T[], key: keyof T) {
+  return items.reduce<Record<string, number>>((totals, item) => {
+    const value = String(item[key] || "Other");
+    totals[value] = (totals[value] || 0) + 1;
+    return totals;
+  }, {});
+}
+
+function topByPerformance(items: ContentPost[], key: "topic" | "format") {
+  const groups = items.reduce<Record<string, { count: number; performance: number }>>((totals, item) => {
+    const value = item[key] || "Other";
+    totals[value] ||= { count: 0, performance: 0 };
+    totals[value].count += 1;
+    totals[value].performance += item.performance || 0;
+    return totals;
+  }, {});
+
+  return Object.entries(groups)
+    .map(([name, data]) => ({ name, score: Math.round(data.performance / data.count), count: data.count }))
+    .sort((a, b) => (b.score + b.count * 2) - (a.score + a.count * 2))[0] ?? { name: "content systems", score: 80, count: 1 };
+}
+
+function getContentIntel(feed: ContentPost[]): ContentIntel {
+  const safeFeed = feed.length ? feed : FALLBACK_CONTENT_FEED;
+  const nowKey = monthKey(new Date());
+  const activeMonth = safeFeed.some((post) => monthKey(post.publishedAt) === nowKey)
+    ? nowKey
+    : monthKey([...safeFeed].sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())[0].publishedAt);
+  const monthPosts = safeFeed.filter((post) => monthKey(post.publishedAt) === activeMonth);
+  const bestPost = [...safeFeed].sort((a, b) => (b.performance || 0) - (a.performance || 0))[0];
+  const bestYouTube = [...safeFeed]
+    .filter((post) => post.platform === "YouTube")
+    .sort((a, b) => (b.performance || 0) - (a.performance || 0))[0] ?? bestPost;
+  const topTopic = topByPerformance(safeFeed, "topic");
+  const topFormat = topByPerformance(safeFeed, "format");
+  const topicCounts = countBy(monthPosts, "topic");
+  const missingProof = !monthPosts.some((post) => post.topic === "client work" && post.performance >= 80);
+  const postedTotal = monthPosts.length;
+  const totalPercent = Math.min(100, Math.round((postedTotal / CONTENT_GOALS.total) * 100));
+  const rawChannelCounts = countBy(monthPosts, "platform");
+
+  const suggestions: ContentSuggestion[] = [
+    {
+      type: "Follow-up",
+      title: `Make a part two on ${topTopic.name}`,
+      reason: `${topTopic.name} has the best mix of volume and performance in the current feed.`,
+      score: Math.min(98, topTopic.score + 8),
+    },
+    {
+      type: "Repurpose",
+      title: `Cut "${bestYouTube.title}" into 5 short posts`,
+      reason: "Turn the strongest long-form angle into Reels, Shorts, and Stories while the topic is warm.",
+      score: 92,
+    },
+    {
+      type: missingProof ? "Gap" : "Double down",
+      title: missingProof ? "Add one client-results story" : `Push another ${bestPost.topic} post`,
+      reason: missingProof
+        ? "The mix is strong on process. A proof-based post would balance the feed and support selling."
+        : `"${bestPost.title}" is your strongest signal, so the next move should stay close to that angle.`,
+      score: missingProof ? 86 : Math.min(96, (bestPost.performance || 80) + 6),
+    },
+    {
+      type: "Balance",
+      title: "Keep Instagram volume steady this week",
+      reason: `You have ${Object.keys(topicCounts).length} active topics. Rotate them so the feed does not lean too hard on one lane.`,
+      score: 79,
+    },
+  ];
+
+  return {
+    monthLabel: getMonthLabel(activeMonth),
+    monthPosts,
+    totalPercent,
+    primarySuggestion: suggestions[0],
+    suggestions: suggestions.slice(1),
+    topTopic: topTopic.name,
+    topFormat: topFormat.name,
+    repurposeCount: safeFeed.filter((post) => post.platform === "YouTube" && (post.performance || 0) >= 75).length,
+    channelCounts: {
+      YouTube: rawChannelCounts.YouTube || 0,
+      Instagram: rawChannelCounts.Instagram || 0,
+    },
+  };
+}
+
 /* ── Status badge ── */
-function Badge({ label, type }: { label: string; type?: "good" | "warn" | "neutral" }) {
+function Badge({ label, type }: { label: string; type?: BadgeTone }) {
   const color =
     type === "good"    ? "#86efac" :
     type === "warn"    ? "#f0a070" :
@@ -27,7 +179,15 @@ function Badge({ label, type }: { label: string; type?: "good" | "warn" | "neutr
 }
 
 /* ── Nav link ── */
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({
+  href,
+  children,
+  onClick,
+}: {
+  href: string;
+  children: React.ReactNode;
+  onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+}) {
   return (
     <a href={href} style={{
       flex: 1,
@@ -40,14 +200,244 @@ function NavLink({ href, children }: { href: string; children: React.ReactNode }
       letterSpacing: ".06em",
       textTransform: "uppercase",
       transition: "color .15s",
-    }}>
+    }} onClick={onClick}>
       {children}
     </a>
   );
 }
 
+function ProgressBar({ platform, count }: { platform: ContentPlatform; count: number }) {
+  const goal = CONTENT_GOALS[platform];
+  const percent = Math.min(100, Math.round((count / goal) * 100));
+
+  return (
+    <div style={{ padding: "14px 0", borderBottom: BORDER }}>
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "baseline",
+        gap: 12,
+        marginBottom: 9,
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{platform}</span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(242,242,242,.45)" }}>
+          {count} / {goal} posted
+        </span>
+      </div>
+      <div style={{
+        height: 8,
+        background: "rgba(242,242,242,.1)",
+        border: BORDER,
+        overflow: "hidden",
+      }}>
+        <div style={{
+          width: `${percent}%`,
+          height: "100%",
+          background: platform === "YouTube" ? "var(--accent)" : "var(--accent-2)",
+          transition: "width .3s ease",
+        }} />
+      </div>
+    </div>
+  );
+}
+
+function ContentIntelView({ intel }: { intel: ContentIntel }) {
+  const postedTotal = intel.monthPosts.length;
+
+  return (
+    <div id="content-intel" style={{ flex: 1, overflow: "auto" }}>
+      <div style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 16,
+        padding: "10px 22px",
+        borderBottom: BORDER,
+      }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(242,242,242,.35)" }}>
+          Content intelligence
+        </span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(242,242,242,.45)" }}>
+          {intel.monthLabel}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", minHeight: "100%" }}>
+        <section style={{
+          flex: "1 1 460px",
+          borderRight: BORDER_STRONG,
+          padding: 22,
+          minWidth: 0,
+        }}>
+          <Badge label="Next best move" type="good" />
+          <h2 style={{
+            margin: "18px 0 12px",
+            fontSize: "clamp(28px, 4vw, 48px)",
+            lineHeight: .95,
+            letterSpacing: 0,
+          }}>
+            {intel.primarySuggestion.title}
+          </h2>
+          <p style={{
+            margin: "0 0 22px",
+            maxWidth: 620,
+            color: "rgba(242,242,242,.72)",
+            lineHeight: 1.6,
+            fontSize: 14,
+          }}>
+            {intel.primarySuggestion.reason}
+          </p>
+
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+            gap: 10,
+            marginBottom: 22,
+          }}>
+            {[
+              [intel.topTopic, "Strongest topic"],
+              [intel.topFormat, "Best format"],
+              [String(intel.repurposeCount), "Repurpose chances"],
+            ].map(([value, label]) => (
+              <div key={label} style={{ borderTop: `1px solid rgba(235,106,46,.32)`, paddingTop: 12 }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "var(--accent)", lineHeight: 1.1 }}>{value}</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(242,242,242,.4)", marginTop: 5, letterSpacing: ".06em", textTransform: "uppercase" }}>
+                  {label}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {intel.suggestions.map((suggestion) => (
+            <div key={suggestion.title} style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 54px",
+              gap: 16,
+              padding: "16px 0",
+              borderTop: BORDER,
+              alignItems: "center",
+            }}>
+              <div>
+                <Badge label={suggestion.type} type="neutral" />
+                <div style={{ fontSize: 14, fontWeight: 700, margin: "9px 0 4px" }}>{suggestion.title}</div>
+                <div style={{ fontSize: 12, color: "rgba(242,242,242,.46)", fontFamily: "var(--font-mono)", lineHeight: 1.5 }}>
+                  {suggestion.reason}
+                </div>
+              </div>
+              <div style={{
+                width: 54,
+                height: 54,
+                display: "grid",
+                placeItems: "center",
+                background: "linear-gradient(135deg, var(--accent-2), var(--accent))",
+                color: "#0D0D0D",
+                fontWeight: 900,
+              }}>
+                {suggestion.score}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <aside style={{ flex: "1 1 300px", padding: 22, minWidth: 0 }}>
+          <p style={{ margin: "0 0 14px", fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(242,242,242,.4)" }}>
+            Monthly Progress
+          </p>
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 18,
+            paddingBottom: 22,
+            borderBottom: BORDER,
+          }}>
+            <div>
+              <div style={{ fontSize: 46, fontWeight: 900, lineHeight: 1, letterSpacing: 0 }}>
+                {postedTotal} / {CONTENT_GOALS.total}
+              </div>
+              <div style={{ marginTop: 8, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(242,242,242,.42)", lineHeight: 1.5 }}>
+                {Math.max(CONTENT_GOALS.total - postedTotal, 0)} posts left to hit the month.
+              </div>
+            </div>
+            <div style={{
+              width: 112,
+              height: 112,
+              borderRadius: "50%",
+              display: "grid",
+              placeItems: "center",
+              background: `conic-gradient(var(--accent) ${intel.totalPercent * 3.6}deg, rgba(242,242,242,.1) 0deg)`,
+              flexShrink: 0,
+            }}>
+              <div style={{
+                width: 78,
+                height: 78,
+                borderRadius: "50%",
+                display: "grid",
+                placeItems: "center",
+                background: "#0D0D0D",
+                border: BORDER,
+                fontWeight: 900,
+              }}>
+                {intel.totalPercent}%
+              </div>
+            </div>
+          </div>
+
+          <ProgressBar platform="YouTube" count={intel.channelCounts.YouTube} />
+          <ProgressBar platform="Instagram" count={intel.channelCounts.Instagram} />
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
+            {["YouTube", "Instagram", "Monthly target: 40"].map((label) => (
+              <span key={label} style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                color: "rgba(242,242,242,.45)",
+                border: BORDER,
+                padding: "6px 8px",
+              }}>
+                {label}
+              </span>
+            ))}
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 export default function OpsHub() {
-  const [activeSection, setActiveSection] = useState<"tasks" | "content" | "projects">("tasks");
+  const [activeSection, setActiveSection] = useState<DashboardSection>("tasks");
+  const [contentFeed, setContentFeed] = useState<ContentPost[]>(FALLBACK_CONTENT_FEED);
+  const contentIntel = useMemo(() => getContentIntel(contentFeed), [contentFeed]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetch("/api/content-feed", { headers: { Accept: "application/json" } })
+      .then((response) => {
+        if (!response.ok) throw new Error("No content feed available");
+        return response.json() as Promise<ContentPost[]>;
+      })
+      .then((feed) => {
+        if (isMounted && Array.isArray(feed) && feed.length > 0) {
+          setContentFeed(feed);
+        }
+      })
+      .catch(() => {
+        if (isMounted) setContentFeed(FALLBACK_CONTENT_FEED);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectSection = (section: DashboardSection) => (event: React.MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    setActiveSection(section);
+    window.requestAnimationFrame(() => {
+      document.getElementById(section === "intel" ? "content-intel" : section)?.scrollIntoView({ block: "nearest" });
+    });
+  };
 
   return (
     <div style={{
@@ -79,9 +469,10 @@ export default function OpsHub() {
         }}>
           © 2026 Framework
         </div>
-        <NavLink href="#tasks">Tasks <span style={{ color: "var(--accent)", marginLeft: 6 }}>42</span></NavLink>
-        <NavLink href="#projects">Projects <span style={{ color: "var(--accent)", marginLeft: 6 }}>9</span></NavLink>
-        <NavLink href="#content">Content <span style={{ color: "var(--accent)", marginLeft: 6 }}>12</span></NavLink>
+        <NavLink href="#tasks" onClick={selectSection("tasks")}>Tasks <span style={{ color: "var(--accent)", marginLeft: 6 }}>42</span></NavLink>
+        <NavLink href="#projects" onClick={selectSection("projects")}>Projects <span style={{ color: "var(--accent)", marginLeft: 6 }}>9</span></NavLink>
+        <NavLink href="#content" onClick={selectSection("content")}>Content <span style={{ color: "var(--accent)", marginLeft: 6 }}>12</span></NavLink>
+        <NavLink href="#content-intel" onClick={selectSection("intel")}>Suggestions <span style={{ color: "var(--accent)", marginLeft: 6 }}>New</span></NavLink>
         <NavLink href="#meetings">Meetings</NavLink>
         <NavLink href="#sops">SOPs</NavLink>
         <NavLink href="#scorecard">Scorecard</NavLink>
@@ -237,7 +628,7 @@ export default function OpsHub() {
         <div style={{ display: "flex", flexDirection: "column", borderRight: BORDER_STRONG }}>
           {/* Tab bar */}
           <div style={{ display: "flex", borderBottom: BORDER_STRONG }}>
-            {(["tasks", "content", "projects"] as const).map((tab) => (
+            {(["tasks", "content", "projects", "intel"] as const).map((tab) => (
               <button key={tab} onClick={() => setActiveSection(tab)} style={{
                 flex: 1,
                 padding: "14px",
@@ -252,7 +643,7 @@ export default function OpsHub() {
                 textTransform: "uppercase",
                 cursor: "pointer",
               }}>
-                {tab}
+                {tab === "intel" ? "suggestions" : tab}
               </button>
             ))}
           </div>
@@ -350,6 +741,10 @@ export default function OpsHub() {
                 </div>
               ))}
             </div>
+          )}
+
+          {activeSection === "intel" && (
+            <ContentIntelView intel={contentIntel} />
           )}
         </div>
 
