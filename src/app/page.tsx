@@ -448,10 +448,26 @@ function ContentIntelView({ intel }: { intel: ContentIntel }) {
   );
 }
 
+type ChannelData = {
+  title: string;
+  thumbnail: string;
+  subscribers: string;
+  views: string;
+  videos: string;
+};
+
 export default function OpsHub() {
   const [activeSection, setActiveSection] = useState<DashboardSection>("tasks");
   const [contentFeed, setContentFeed] = useState<ContentPost[]>(FALLBACK_CONTENT_FEED);
+  const [channel, setChannel] = useState<ChannelData | null>(null);
   const contentIntel = useMemo(() => getContentIntel(contentFeed), [contentFeed]);
+
+  useEffect(() => {
+    fetch("/api/youtube/channel")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setChannel(data); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -558,14 +574,17 @@ export default function OpsHub() {
           }}>
             Operations Hub
           </h1>
-          <div style={{
-            display: "flex",
-            gap: 10,
-            flexShrink: 0,
-          }}>
+          <div style={{ display: "flex", gap: 10, flexShrink: 0, alignItems: "center" }}>
+            {channel && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, borderRight: BORDER, paddingRight: 14 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={channel.thumbnail} alt={channel.title} style={{ width: 28, height: 28, borderRadius: "50%", border: "1px solid rgba(235,106,46,.4)" }} />
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(242,242,242,.6)" }}>{channel.title}</span>
+              </div>
+            )}
             <Badge label="Week: Jun 16–22" type="neutral" />
             <Badge label="7 need review" type="warn" />
-            <Badge label="base live" type="good" />
+            <Badge label={channel ? "YouTube connected" : "base live"} type="good" />
           </div>
         </div>
       </div>
@@ -603,10 +622,10 @@ export default function OpsHub() {
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
-                ["42", "Active tasks"],
-                ["9",  "Projects"],
-                ["7",  "Need review"],
-                ["12", "Content ready"],
+                [channel ? Number(channel.subscribers).toLocaleString() : "—", "Subscribers"],
+                [channel ? Number(channel.views).toLocaleString() : "—",       "Total views"],
+                [channel ? channel.videos : "—",                                "Videos"],
+                ["82",                                                           "This month"],
               ].map(([val, label]) => (
                 <div key={label} style={{
                   borderTop: `1px solid rgba(235,106,46,.3)`,
