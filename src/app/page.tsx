@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { signIn, signOut, useSession } from "next-auth/react";
 
 const BORDER = "1px solid rgba(242,242,242,.12)";
 const BORDER_STRONG = "1px solid rgba(242,242,242,.22)";
@@ -157,6 +158,49 @@ function getContentIntel(feed: ContentPost[]): ContentIntel {
 }
 
 /* ── Status badge ── */
+function AuthButton() {
+  const { data: session, status } = useSession();
+  if (status === "loading") return null;
+  if (session) {
+    return (
+      <button onClick={() => signOut()} style={{
+        marginLeft: "auto",
+        padding: "0 22px",
+        background: "none",
+        border: "none",
+        borderLeft: BORDER_STRONG,
+        color: "rgba(242,242,242,.5)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        letterSpacing: ".06em",
+        textTransform: "uppercase",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+      }}>
+        {session.user?.name?.split(" ")[0]} · Sign out
+      </button>
+    );
+  }
+  return (
+    <button onClick={() => signIn("google")} style={{
+      marginLeft: "auto",
+      padding: "0 22px",
+      background: "none",
+      border: "none",
+      borderLeft: BORDER_STRONG,
+      color: "var(--accent)",
+      fontFamily: "var(--font-mono)",
+      fontSize: 11,
+      letterSpacing: ".06em",
+      textTransform: "uppercase",
+      cursor: "pointer",
+      whiteSpace: "nowrap",
+    }}>
+      Connect YouTube →
+    </button>
+  );
+}
+
 function Badge({ label, type }: { label: string; type?: BadgeTone }) {
   const color =
     type === "good"    ? "#86efac" :
@@ -476,6 +520,7 @@ export default function OpsHub() {
         <NavLink href="#meetings">Meetings</NavLink>
         <NavLink href="#sops">SOPs</NavLink>
         <NavLink href="#scorecard">Scorecard</NavLink>
+        <AuthButton />
       </nav>
 
       {/* ── HERO ROW ── */}
