@@ -6,7 +6,7 @@ const BORDER = "1px solid rgba(242,242,242,.12)";
 const BORDER_STRONG = "1px solid rgba(242,242,242,.22)";
 
 type BadgeTone = "good" | "warn" | "neutral";
-type DashboardSection = "tasks" | "content" | "projects" | "intel";
+type DashboardSection = "tasks" | "content" | "projects" | "intel" | "youtube";
 type ContentPlatform = "YouTube" | "Instagram";
 
 type ContentPost = {
@@ -158,6 +158,100 @@ function getContentIntel(feed: ContentPost[]): ContentIntel {
 }
 
 /* ── Status badge ── */
+function YouTubeView({ videos, analytics }: { videos: VideoData[]; analytics: AnalyticsData | null }) {
+  function fmtMins(mins: number) {
+    if (mins >= 60) return `${(mins / 60).toFixed(1)}h`;
+    return `${mins}m`;
+  }
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  const maxViews = Math.max(...(analytics?.daily.map(d => d.views) ?? [1]), 1);
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+
+      {/* Analytics strip */}
+      {analytics ? (
+        <>
+          <div style={{ padding: "12px 22px 0", borderBottom: BORDER }}>
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase", color: "rgba(242,242,242,.4)" }}>
+              Last 28 days
+            </span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", borderBottom: BORDER_STRONG }}>
+            {[
+              ["Views",       analytics.totals.views.toLocaleString()],
+              ["Watch time",  fmtMins(analytics.totals.watchMinutes)],
+              ["Avg duration",`${Math.floor(analytics.totals.avgViewDuration / 60)}:${String(analytics.totals.avgViewDuration % 60).padStart(2,"0")}`],
+              ["Net subs",    (analytics.totals.netSubscribers >= 0 ? "+" : "") + analytics.totals.netSubscribers],
+              ["Revenue",     `$${analytics.totals.revenue}`],
+            ].map(([label, val], i) => (
+              <div key={label} style={{
+                padding: "16px 14px",
+                borderRight: i < 4 ? BORDER : "none",
+              }}>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "rgba(242,242,242,.4)", letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
+                <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.04em", color: label === "Revenue" ? "var(--accent-2)" : label === "Net subs" && analytics.totals.netSubscribers >= 0 ? "#86efac" : "#F2F2F2" }}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Sparkline bar chart */}
+          <div style={{ padding: "14px 22px", borderBottom: BORDER_STRONG, display: "flex", alignItems: "flex-end", gap: 3, height: 60 }}>
+            {analytics.daily.map((day) => (
+              <div key={day.date} title={`${fmtDate(day.date)}: ${day.views.toLocaleString()} views`} style={{
+                flex: 1,
+                height: `${Math.max(4, Math.round((day.views / maxViews) * 40))}px`,
+                background: `rgba(235,106,46,${0.3 + (day.views / maxViews) * 0.7})`,
+                borderRadius: 2,
+                cursor: "default",
+              }} />
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ padding: "18px 22px", borderBottom: BORDER_STRONG, fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(242,242,242,.3)" }}>
+          Loading analytics…
+        </div>
+      )}
+
+      {/* Video list */}
+      <div style={{ padding: "10px 22px 6px", borderBottom: BORDER }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 60px 60px", gap: 12 }}>
+          {["Video", "Views", "Likes", "Published"].map(h => (
+            <span key={h} style={{ fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(242,242,242,.35)" }}>{h}</span>
+          ))}
+        </div>
+      </div>
+
+      {videos.length === 0 ? (
+        <div style={{ padding: "18px 22px", fontFamily: "var(--font-mono)", fontSize: 11, color: "rgba(242,242,242,.3)" }}>Loading videos…</div>
+      ) : (
+        videos.map((v) => (
+          <div key={v.id} style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 70px 60px 60px",
+            gap: 12,
+            padding: "12px 22px",
+            borderBottom: BORDER,
+            alignItems: "center",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={v.thumbnail} alt={v.title} style={{ width: 56, height: 32, objectFit: "cover", borderRadius: 3, flexShrink: 0, border: "1px solid rgba(255,255,255,.08)" }} />
+              <span style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.title}</span>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{v.views.toLocaleString()}</div>
+            <div style={{ fontSize: 12, color: "rgba(242,242,242,.5)" }}>{v.likes.toLocaleString()}</div>
+            <div style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "rgba(242,242,242,.4)" }}>{fmtDate(v.publishedAt)}</div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function AuthButton() {
   const { data: session, status } = useSession();
   if (status === "loading") return null;
@@ -456,16 +550,52 @@ type ChannelData = {
   videos: string;
 };
 
+type VideoData = {
+  id: string;
+  title: string;
+  publishedAt: string;
+  thumbnail: string;
+  views: number;
+  likes: number;
+  comments: number;
+};
+
+type AnalyticsData = {
+  period: { startDate: string; endDate: string };
+  totals: {
+    views: number;
+    watchMinutes: number;
+    avgViewDuration: number;
+    subsGained: number;
+    subsLost: number;
+    netSubscribers: number;
+    revenue: string;
+  };
+  daily: { date: string; views: number; watchMinutes: number; revenue: number }[];
+};
+
 export default function OpsHub() {
   const [activeSection, setActiveSection] = useState<DashboardSection>("tasks");
   const [contentFeed, setContentFeed] = useState<ContentPost[]>(FALLBACK_CONTENT_FEED);
   const [channel, setChannel] = useState<ChannelData | null>(null);
+  const [videos, setVideos] = useState<VideoData[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const contentIntel = useMemo(() => getContentIntel(contentFeed), [contentFeed]);
 
   useEffect(() => {
     fetch("/api/youtube/channel")
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setChannel(data); })
+      .catch(() => {});
+
+    fetch("/api/youtube/videos")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.videos) setVideos(data.videos); })
+      .catch(() => {});
+
+    fetch("/api/youtube/analytics")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.totals) setAnalytics(data); })
       .catch(() => {});
   }, []);
 
@@ -692,7 +822,7 @@ export default function OpsHub() {
         <div style={{ display: "flex", flexDirection: "column", borderRight: BORDER_STRONG }}>
           {/* Tab bar */}
           <div style={{ display: "flex", borderBottom: BORDER_STRONG }}>
-            {(["tasks", "content", "projects", "intel"] as const).map((tab) => (
+            {(["tasks", "content", "projects", "intel", "youtube"] as const).map((tab) => (
               <button key={tab} onClick={() => setActiveSection(tab)} style={{
                 flex: 1,
                 padding: "14px",
@@ -707,7 +837,7 @@ export default function OpsHub() {
                 textTransform: "uppercase",
                 cursor: "pointer",
               }}>
-                {tab === "intel" ? "suggestions" : tab}
+                {tab === "intel" ? "suggestions" : tab === "youtube" ? "YouTube" : tab}
               </button>
             ))}
           </div>
@@ -809,6 +939,10 @@ export default function OpsHub() {
 
           {activeSection === "intel" && (
             <ContentIntelView intel={contentIntel} />
+          )}
+
+          {activeSection === "youtube" && (
+            <YouTubeView videos={videos} analytics={analytics} />
           )}
         </div>
 
